@@ -16,7 +16,7 @@ app.MapPost("/webhook/{agreementId}", async (string agreementId, ConnectionMulti
 
     // Push into queue
     var db = redis.GetDatabase();
-    await db.ListLeftPushAsync(agreementId, signatureId);
+    await db.ListLeftPushExpireAsync(agreementId, signatureId, TimeSpan.FromMinutes(2));
 });
 
 app.MapGet("/sign/{agreementId}", async (string agreementId, ConnectionMultiplexer redis, ILogger<Program> logger) =>
@@ -40,6 +40,17 @@ public record SignResponse(string Status, string? SignatureId, string? Message =
 
 public static class DatabaseExtensions
 {
+    public static Task<bool> ListLeftPushExpireAsync(this IDatabase db, RedisKey key, RedisValue value, TimeSpan ttl)
+    {
+        var trans = db.CreateTransaction();
+
+        trans.ListLeftPushAsync(key, value);
+        trans.KeyExpireAsync(key, ttl);
+
+        var transactionResult = trans.Execute();
+        return Task.FromResult(transactionResult);
+    }
+
     public static async Task<RedisValue> BlockingLeftPopAsync(this IDatabase db, RedisKey key, int retryIntervalMilliseconds = 100, int timeoutMilliseconds = 60_000)
     {
         var cancellationTokenSource = new CancellationTokenSource();
